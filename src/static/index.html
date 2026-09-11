@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>skjul</title>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap">
+    <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+    <h1>C Obfuscator</h1>
+    <h3>Made with Rust+Axum</h3>
+
+    <form action="/transform" method="post">
+        <textarea name="text" class="raw_code" placeholder="Enter C code" rows="20" cols="80"></textarea>
+        <button type="submit">Obfuscate</button>
+    </form>
+
+    <h3>Make sure your raw C code compiles successfully before obfuscating it!</h3>
+</body>
+</html>
