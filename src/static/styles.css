@@ -38,4 +38,21 @@ button {
     resize: none;
 }
 
+.result {
+    width: 80%;
+    box-sizing: border-box;
+    padding: 20px;
+    background-color: #2b2b2b;
+    border-radius: 8px;
+    font-size: 16px;
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+}
+
+.back {
+    margin: 20px 0;
+    color: #ffffff;
+}
+
 
