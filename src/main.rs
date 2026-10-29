@@ -15,6 +15,9 @@ mod parsing;
 mod tokenization;
 mod transformation;
 
+#[cfg(test)]
+mod corpus_tests;
+
 use obfuscation::literals::obfuscate_literals;
 use tokenization::token::{Token, TokenType};
 
