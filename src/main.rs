@@ -11,7 +11,9 @@ use serde::Deserialize;
 use std::collections::HashMap;
 
 mod obfuscation;
+mod parsing;
 mod tokenization;
+mod transformation;
 
 use obfuscation::literals::obfuscate_literals;
 use tokenization::token::{Token, TokenType};
@@ -47,18 +49,42 @@ async fn styles() -> ([(header::HeaderName, &'static str); 1], &'static str) {
 }
 
 async fn transform(Form(input): Form<Input>) -> Html<String> {
-    let (heading, body) = match tokenization::lexer::tokenize(&input.text) {
-        // Layered obfuscation: rename identifiers, then disguise every literal,
-        // then strip the stream down to minimal whitespace. Each pass preserves
-        // the program's behaviour; together they leave little of the original.
-        Ok(tokens) => (
-            "Obfuscated",
-            minify(&obfuscate_literals(rename_identifiers(tokens))),
-        ), // exit point for obfuscated code
+    let (heading, body) = match obfuscate(&input.text) {
+        Ok(code) => ("Obfuscated", code),
         Err(error) => ("Error", error),
     };
 
     Html(result_page(heading, &body))
+}
+
+/// The full obfuscation pipeline.
+///
+/// When the source parses into the AST subset, the structural passes
+/// (control-flow flattening, opaque predicates) rewrite its shape and it is
+/// printed back to C. When it does not — a construct outside the subset — we
+/// fall back to the original source untouched. Either way the token-level
+/// passes finish the job: rename identifiers, disguise every literal, then
+/// strip the stream down to minimal whitespace. Each pass preserves the
+/// program's behaviour; together they leave little of the original.
+fn obfuscate(source: &str) -> Result<String, String> {
+    // Deterministic seed → the same source always produces the same output.
+    // The constant is the 64-bit golden ratio, a conventional mixing value.
+    const SEED: u64 = 0x9E37_79B9_7F4A_7C15;
+
+    let tokens = tokenization::lexer::tokenize(source)?;
+
+    // Structural (AST) path, with a fall back to the source on a parse error.
+    let staged = match parsing::parser::parse(tokens) {
+        Ok(unit) => {
+            let mut rng = transformation::Rng::new(SEED);
+            parsing::printer::print_unit(&transformation::transform(unit, &mut rng))
+        }
+        Err(_) => source.to_string(),
+    };
+
+    // Re-lex the staged C and run the token-level passes over it.
+    let tokens = tokenization::lexer::tokenize(&staged)?;
+    Ok(minify(&obfuscate_literals(rename_identifiers(tokens))))
 }
 
 /// Render the obfuscated code (or an error) as a full HTML page. The code is
@@ -84,8 +110,10 @@ fn html_escape(text: &str) -> String {
         .replace('>', "&gt;")
 }
 
-/// Replace every renamable identifier with an opaque name (`_O0`, `_O1`, …),
-/// consistently: the same source name always maps to the same new one.
+/// Replace every renamable identifier with an opaque, deliberately
+/// hard-to-read name (`_l`, `_I`, `_O`, `_o`, `_0`, `_lI`, …) built from
+/// look-alike characters, consistently: the same source name always maps to
+/// the same new one.
 ///
 /// Reserved names are left untouched. The lexer only recognises `int` and
 /// `return` as keywords, so every other C keyword (`char`, `if`, `for`, …)
@@ -108,7 +136,7 @@ fn rename_identifiers(tokens: Vec<Token>) -> Vec<Token> {
                     let new_name = match map.get(name) {
                         Some(existing) => existing.clone(),
                         None => {
-                            let generated = format!("_O{}", map.len());
+                            let generated = opaque_name(map.len());
                             map.insert(name.clone(), generated.clone());
                             generated
                         }
@@ -119,6 +147,27 @@ fn rename_identifiers(tokens: Vec<Token>) -> Vec<Token> {
             token
         })
         .collect()
+}
+
+/// Build the opaque replacement name for the `index`-th renamed identifier.
+///
+/// The names are drawn from a small alphabet of look-alike glyphs (lowercase
+/// L, uppercase I and O, lowercase o, digit 0) and always start with `_`, so
+/// every result is a valid identifier that is tedious to tell apart from its
+/// neighbours by eye. Encoding `index` in this alphabet keeps the mapping
+/// injective, so distinct identifiers never collide.
+fn opaque_name(index: usize) -> String {
+    const ALPHABET: [char; 5] = ['l', 'I', 'O', 'o', '0'];
+    let mut n = index;
+    let mut name = String::from("_");
+    loop {
+        name.push(ALPHABET[n % ALPHABET.len()]);
+        n /= ALPHABET.len();
+        if n == 0 {
+            break;
+        }
+    }
+    name
 }
 
 /// Collect every identifier-like word appearing in a preprocessor directive,

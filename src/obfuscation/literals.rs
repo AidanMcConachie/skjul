@@ -4,9 +4,12 @@
 //!
 //! Three kinds of literal are handled:
 //!
-//! * **Strings** are re-encoded so every byte becomes a three-digit octal
-//!   escape (`"hi"` → `"\150\151"`). The bytes are identical, so the program
-//!   behaves the same; the human-readable text is gone.
+//! * **Strings** are re-encoded so every byte becomes an escape — a
+//!   three-digit octal (`\150`) or two-digit hex (`\x68`) form, chosen per
+//!   byte. Every escape begins with a backslash, which terminates any
+//!   preceding hex escape, so the two forms mix safely for any bytes. The
+//!   bytes are identical, so the program behaves the same; the readable text
+//!   is gone.
 //! * **Character constants** become integer expressions. A character constant
 //!   has type `int` in C, so `'A'` and `65` are interchangeable as values, and
 //!   we can hand the result to the same arithmetic scrambler the integers use.
@@ -35,7 +38,7 @@ pub fn obfuscate_literals(tokens: Vec<Token>) -> Vec<Token> {
         .map(|i| {
             let kind = match &tokens[i].kind {
                 TokenType::STRING(content) => {
-                    TokenType::STRING(encode_octal(&decode_c_escapes(content)))
+                    TokenType::STRING(encode_mixed(&decode_c_escapes(content), &mut state))
                 }
 
                 TokenType::CHARACTER(content) => {
@@ -90,25 +93,106 @@ fn neighbour(tokens: &[Token], i: usize, offset: isize) -> Option<&TokenType> {
 
 /// Produce a parenthesised integer constant expression equal to `value`.
 ///
-/// Two shapes are used, chosen by the generator so repeated values look
-/// different: a bitwise `(A^B)` and an arithmetic `(A-B)`. Both operands are
-/// non-negative literals, so no unary-minus token is introduced and the text
-/// drops cleanly into the stream.
+/// The expression is built recursively: each operand of the top-level
+/// operation is itself an obfuscated sub-expression, down to [`INT_DEPTH`]
+/// levels, so a single literal fans out into a small tree of operations.
+/// Several shapes are used (`^`, `-`, `+`, `<<`/`+`, `*`), chosen by the
+/// generator so repeated values look different.
+///
+/// Every operand is a non-negative integer, so no unary-minus token is ever
+/// introduced (which could fuse with a preceding operator in the minified
+/// text), and the whole expression stays a legal integer constant expression —
+/// valid anywhere a plain literal was.
 fn obfuscate_int(value: i64, state: &mut u64) -> String {
+    obfuscate_int_rec(value, INT_DEPTH, state)
+}
+
+/// Each recursion level replaces both operands with sub-expressions, so the
+/// literal fans out into up to `2^INT_DEPTH` leaves. Kept small to bound the
+/// size of the generated text.
+const INT_DEPTH: u32 = 2;
+
+fn obfuscate_int_rec(value: i64, depth: u32, state: &mut u64) -> String {
+    // Leaf: emit the plain literal. `value` is non-negative at every level, so
+    // this never introduces a leading minus.
+    if depth == 0 {
+        return value.to_string();
+    }
+
     let mask = (next(state) % 0xFFFF) as i64 + 1; // 1..=0xFFFF
 
-    if next(state) % 2 == 0 {
-        // XOR always round-trips for a non-negative value, flipping only the
-        // low bits, so `A = value ^ mask` stays non-negative.
-        let a = value ^ mask;
-        format!("({a}^{mask})")
-    } else {
-        // Subtraction, but fall back to XOR if `value + mask` would overflow.
-        match value.checked_add(mask) {
-            Some(a) => format!("({a}-{mask})"),
-            None => format!("({}^{mask})", value ^ mask),
+    match next(state) % 5 {
+        // value = A ^ mask. XOR flips only low bits, so A stays non-negative.
+        0 => {
+            let a = obfuscate_int_rec(value ^ mask, depth - 1, state);
+            let b = obfuscate_int_rec(mask, depth - 1, state);
+            format!("({a}^{b})")
+        }
+
+        // value = A - mask, with A = value + mask. Fall back to XOR when the
+        // addition would overflow i64.
+        1 => match value.checked_add(mask) {
+            Some(sum) => {
+                let a = obfuscate_int_rec(sum, depth - 1, state);
+                let b = obfuscate_int_rec(mask, depth - 1, state);
+                format!("({a}-{b})")
+            }
+            None => {
+                let a = obfuscate_int_rec(value ^ mask, depth - 1, state);
+                let b = obfuscate_int_rec(mask, depth - 1, state);
+                format!("({a}^{b})")
+            }
+        },
+
+        // value = A + B, split into two non-negative parts that sum to it.
+        2 => {
+            let b_val = (next(state) % (value as u64 + 1)) as i64; // 0..=value
+            let a = obfuscate_int_rec(value - b_val, depth - 1, state);
+            let b = obfuscate_int_rec(b_val, depth - 1, state);
+            format!("({a}+{b})")
+        }
+
+        // value = (high << s) + low, the exact shift/remainder split of value.
+        3 => {
+            let s = (next(state) % 8) as u32 + 1; // 1..=8
+            let high = obfuscate_int_rec(value >> s, depth - 1, state);
+            let low = obfuscate_int_rec(value & ((1i64 << s) - 1), depth - 1, state);
+            format!("(({high}<<{s})+{low})")
+        }
+
+        // value = A * B, when a small factor exists; otherwise fall back to XOR.
+        _ => match small_factor(value, state) {
+            Some(f) => {
+                let a = obfuscate_int_rec(f, depth - 1, state);
+                let b = obfuscate_int_rec(value / f, depth - 1, state);
+                format!("({a}*{b})")
+            }
+            None => {
+                let a = obfuscate_int_rec(value ^ mask, depth - 1, state);
+                let b = obfuscate_int_rec(mask, depth - 1, state);
+                format!("({a}^{b})")
+            }
+        },
+    }
+}
+
+/// Find a small divisor of `value` so it can be written as a product, or
+/// `None` when none of the candidates divide it (e.g. a large prime). Zero is
+/// reported as divisible by 2 (`2 * 0`). The starting point is drawn from the
+/// generator so the chosen factor varies.
+fn small_factor(value: i64, state: &mut u64) -> Option<i64> {
+    if value == 0 {
+        return Some(2);
+    }
+    const CANDIDATES: [i64; 6] = [2, 3, 5, 7, 11, 13];
+    let start = (next(state) % CANDIDATES.len() as u64) as usize;
+    for k in 0..CANDIDATES.len() {
+        let f = CANDIDATES[(start + k) % CANDIDATES.len()];
+        if value % f == 0 {
+            return Some(f);
         }
     }
+    None
 }
 
 /// Advance the counter-based generator and return the next value. This is an
@@ -220,14 +304,19 @@ fn push_utf8(out: &mut Vec<u8>, c: char) {
     out.extend_from_slice(c.encode_utf8(&mut buf).as_bytes());
 }
 
-/// Re-encode raw bytes as a string-literal body in which every byte is a
-/// three-digit octal escape. Fixed-width escapes are self-delimiting, so the
-/// result is unambiguous no matter what bytes follow (`"\1" "2"` ambiguity
-/// cannot arise).
-fn encode_octal(bytes: &[u8]) -> String {
+/// Re-encode raw bytes as a string-literal body in which every byte is an
+/// escape sequence, chosen per byte between a three-digit octal (`\150`) and a
+/// two-digit hex (`\x68`) form. Both forms begin with a backslash, and a
+/// backslash terminates a hex escape, so the hex form never swallows the
+/// following byte's digits — the two mix safely for any byte sequence.
+fn encode_mixed(bytes: &[u8], state: &mut u64) -> String {
     let mut out = String::new();
     for &b in bytes {
-        out.push_str(&format!("\\{b:03o}"));
+        if next(state) % 2 == 0 {
+            out.push_str(&format!("\\{b:03o}"));
+        } else {
+            out.push_str(&format!("\\x{b:02x}"));
+        }
     }
     out
 }
