@@ -14,6 +14,7 @@
 //! Every predicate is a constant integer expression built from small literals,
 //! chosen so it cannot overflow and is provably non-zero.
 
+use super::predicates::opaque_true;
 use super::Rng;
 use crate::parsing::ast::*;
 
@@ -133,56 +134,3 @@ fn wrap_opaque(stmt: Stmt, rng: &mut Rng) -> Stmt {
     }
 }
 
-/// Build an integer constant expression that is always non-zero (true in a
-/// C condition). All operands are small literals, so none of the arithmetic
-/// can overflow.
-fn opaque_true(rng: &mut Rng) -> Expr {
-    let a = rng.range(1, 1000);
-    let b = rng.range(1, 1000);
-    match rng.below(4) {
-        // a*a + b*b >= 0  — a sum of squares is never negative.
-        0 => ge(add(mul(int(a), int(a)), mul(int(b), int(b))), int(0)),
-        // ((a | 1) & 1) == 1  — setting then testing the low bit.
-        1 => eq(band(bor(int(a), int(1)), int(1)), int(1)),
-        // (a * (a + 1)) % 2 == 0  — a product of consecutive integers is even.
-        2 => eq(modulo(mul(int(a), add(int(a), int(1))), int(2)), int(0)),
-        // a * a >= a  — holds for every a >= 1.
-        _ => ge(mul(int(a), int(a)), int(a)),
-    }
-}
-
-// Small expression constructors, kept local to keep `opaque_true` readable.
-
-fn int(n: i64) -> Expr {
-    Expr::Int(n)
-}
-
-fn bin(op: BinOp, lhs: Expr, rhs: Expr) -> Expr {
-    Expr::Binary {
-        op,
-        lhs: Box::new(lhs),
-        rhs: Box::new(rhs),
-    }
-}
-
-fn add(l: Expr, r: Expr) -> Expr {
-    bin(BinOp::Add, l, r)
-}
-fn mul(l: Expr, r: Expr) -> Expr {
-    bin(BinOp::Mul, l, r)
-}
-fn modulo(l: Expr, r: Expr) -> Expr {
-    bin(BinOp::Mod, l, r)
-}
-fn ge(l: Expr, r: Expr) -> Expr {
-    bin(BinOp::Ge, l, r)
-}
-fn eq(l: Expr, r: Expr) -> Expr {
-    bin(BinOp::Eq, l, r)
-}
-fn band(l: Expr, r: Expr) -> Expr {
-    bin(BinOp::BitAnd, l, r)
-}
-fn bor(l: Expr, r: Expr) -> Expr {
-    bin(BinOp::BitOr, l, r)
-}

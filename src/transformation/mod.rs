@@ -7,25 +7,35 @@
 //! be unsafe to rewrite it is left untouched, so the output always compiles to
 //! an equivalent program.
 //!
-//! Two passes exist so far:
+//! Three passes exist so far:
 //!
 //! * [`flatten`] turns a function's straight-line body into a
 //!   `while`/`switch` state machine (control-flow flattening).
 //! * [`opaque`] wraps statements in always-true `if` guards (opaque
 //!   predicates).
+//! * [`deadcode`] splices self-contained junk behind always-false `if` guards
+//!   (dead-code insertion).
+//!
+//! The opaque-true and opaque-false predicates both passes rely on live in
+//! [`predicates`].
 
+pub mod deadcode;
 pub mod flatten;
 pub mod opaque;
+pub mod predicates;
 
 use crate::parsing::ast::TranslationUnit;
 
 /// Run every structural pass over a translation unit, in order.
 ///
 /// Flattening runs first so the dispatcher it introduces is itself eligible
-/// for opaque-predicate wrapping.
+/// for opaque-predicate wrapping. Dead-code insertion runs last so its junk
+/// blocks are not themselves wrapped in opaque guards, keeping each pass's
+/// contribution to the output distinct.
 pub fn transform(unit: TranslationUnit, rng: &mut Rng) -> TranslationUnit {
     let unit = flatten::flatten_unit(unit, rng);
-    opaque::insert_opaque_predicates(unit, rng)
+    let unit = opaque::insert_opaque_predicates(unit, rng);
+    deadcode::insert_dead_code(unit, rng)
 }
 
 /// A tiny counter-based pseudo-random generator (a linear congruential
