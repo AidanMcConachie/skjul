@@ -28,6 +28,11 @@ pub enum Item {
     Function(Function),
     /// A file-scope declaration, e.g. `int g = 3;`.
     Declaration(Declaration),
+    /// Pre-rendered top-level text emitted verbatim by an obfuscation pass
+    /// (e.g. an injected runtime helper and its supporting globals). Like
+    /// [`Expr::Raw`], it is the producer's job to make the text a
+    /// self-contained, well-formed sequence of top-level C.
+    Raw(String),
 }
 
 #[derive(Debug, Clone)]

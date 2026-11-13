@@ -149,6 +149,29 @@ int main() {
 "#,
     ),
     (
+        // Stresses string encryption: a literal reused across loop iterations,
+        // two literals live at once in one `printf`, a literal returned from a
+        // function, a literal indexed directly, and literals carrying escapes.
+        "string_encryption",
+        r#"
+#include <stdio.h>
+const char *label(int ok) {
+    if (ok) return "yes";
+    return "no";
+}
+int main() {
+    for (int i = 0; i < 3; i++) {
+        printf("row %d: %s\n", i, "repeated");
+    }
+    printf("%s / %s\n", "left", "right");
+    printf("tab\tnewline-escaped\n");
+    printf("first char of 'skjul' is %c\n", "skjul"[0]);
+    printf("%s %s empty[%s]\n", label(1), label(0), "");
+    return 0;
+}
+"#,
+    ),
+    (
         "expressions",
         r#"
 #include <stdio.h>

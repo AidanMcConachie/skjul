@@ -7,8 +7,10 @@
 //! be unsafe to rewrite it is left untouched, so the output always compiles to
 //! an equivalent program.
 //!
-//! Three passes exist so far:
+//! Four passes exist so far:
 //!
+//! * [`strings`] encrypts string literals and injects a runtime decoder, so no
+//!   plaintext survives in the compiled binary (string encryption).
 //! * [`flatten`] turns a function's straight-line body into a
 //!   `while`/`switch` state machine (control-flow flattening).
 //! * [`opaque`] wraps statements in always-true `if` guards (opaque
@@ -23,16 +25,23 @@ pub mod deadcode;
 pub mod flatten;
 pub mod opaque;
 pub mod predicates;
+pub mod strings;
 
 use crate::parsing::ast::TranslationUnit;
 
 /// Run every structural pass over a translation unit, in order.
 ///
-/// Flattening runs first so the dispatcher it introduces is itself eligible
-/// for opaque-predicate wrapping. Dead-code insertion runs last so its junk
-/// blocks are not themselves wrapped in opaque guards, keeping each pass's
+/// String encryption runs first, so the decoder calls it leaves behind are
+/// ordinary expressions by the time the later passes run — flattening can split
+/// a string-bearing statement into its own state, and opaque predicates can
+/// wrap it — while the injected decoder (an [`Item::Raw`] block, not a
+/// [`Function`](crate::parsing::ast::Function)) is invisible to all of them and
+/// stays intact. Flattening runs next so the dispatcher it introduces is itself
+/// eligible for opaque-predicate wrapping. Dead-code insertion runs last so its
+/// junk blocks are not themselves wrapped in opaque guards, keeping each pass's
 /// contribution to the output distinct.
 pub fn transform(unit: TranslationUnit, rng: &mut Rng) -> TranslationUnit {
+    let unit = strings::encrypt_strings(unit, rng);
     let unit = flatten::flatten_unit(unit, rng);
     let unit = opaque::insert_opaque_predicates(unit, rng);
     deadcode::insert_dead_code(unit, rng)

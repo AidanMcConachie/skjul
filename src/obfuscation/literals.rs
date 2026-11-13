@@ -214,7 +214,7 @@ fn next(state: &mut u64) -> u64 {
 /// Unknown escapes are passed through best-effort (the escaped character is
 /// kept literally, matching the common compiler behaviour) rather than
 /// rejected, since by this point the source has already lexed cleanly.
-fn decode_c_escapes(content: &str) -> Vec<u8> {
+pub(crate) fn decode_c_escapes(content: &str) -> Vec<u8> {
     let chars: Vec<char> = content.chars().collect();
     let mut out = Vec::new();
     let mut i = 0;

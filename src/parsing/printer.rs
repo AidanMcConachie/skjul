@@ -30,6 +30,7 @@ fn print_item(item: &Item, out: &mut String) {
             out.push(';');
         }
         Item::Function(func) => print_function(func, out),
+        Item::Raw(text) => out.push_str(text),
     }
 }
 
