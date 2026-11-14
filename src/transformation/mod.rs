@@ -7,8 +7,11 @@
 //! be unsafe to rewrite it is left untouched, so the output always compiles to
 //! an equivalent program.
 //!
-//! Four passes exist so far:
+//! Five passes exist so far:
 //!
+//! * [`includes`] drops recognised `#include` directives, splicing in `extern`
+//!   declarations for the standard symbols the program uses (include elision),
+//!   so the output no longer advertises its dependencies in a header block.
 //! * [`strings`] encrypts string literals and injects a runtime decoder, so no
 //!   plaintext survives in the compiled binary (string encryption).
 //! * [`flatten`] turns a function's straight-line body into a
@@ -23,6 +26,7 @@
 
 pub mod deadcode;
 pub mod flatten;
+pub mod includes;
 pub mod opaque;
 pub mod predicates;
 pub mod strings;
@@ -31,7 +35,9 @@ use crate::parsing::ast::TranslationUnit;
 
 /// Run every structural pass over a translation unit, in order.
 ///
-/// String encryption runs first, so the decoder calls it leaves behind are
+/// Include elision runs first, rewriting only top-level directives before any
+/// statement-level pass touches the tree. String encryption runs next, so the
+/// decoder calls it leaves behind are
 /// ordinary expressions by the time the later passes run — flattening can split
 /// a string-bearing statement into its own state, and opaque predicates can
 /// wrap it — while the injected decoder (an [`Item::Raw`] block, not a
@@ -41,6 +47,10 @@ use crate::parsing::ast::TranslationUnit;
 /// junk blocks are not themselves wrapped in opaque guards, keeping each pass's
 /// contribution to the output distinct.
 pub fn transform(unit: TranslationUnit, rng: &mut Rng) -> TranslationUnit {
+    // Include elision runs first: it only rewrites top-level directives, so
+    // doing it up front keeps it clear of the statement-level passes and lets
+    // the spliced `extern` declarations flow through them like any other code.
+    let unit = includes::elide_includes(unit);
     let unit = strings::encrypt_strings(unit, rng);
     let unit = flatten::flatten_unit(unit, rng);
     let unit = opaque::insert_opaque_predicates(unit, rng);
