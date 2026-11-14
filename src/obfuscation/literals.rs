@@ -56,11 +56,11 @@ pub fn obfuscate_literals(tokens: Vec<Token>) -> Vec<Token> {
                 }
 
                 TokenType::INTEGER(value) => {
-                    // The lexer has no float rule, so `3.14` arrives as
-                    // `3 . 14`. Wrapping either integer in parentheses would
-                    // turn that into `(3).(14)`, which no longer parses. Leave
-                    // an integer alone when it sits against a dot so float
-                    // literals keep surviving the round trip.
+                    // The lexer folds most floats into a single `NUMBER` token,
+                    // but a leading-dot form like `.5` still arrives as `. 5`.
+                    // Wrapping that integer in parentheses would yield `.(5)`,
+                    // which no longer parses. Leave an integer alone when it
+                    // sits against a dot so such literals survive the round trip.
                     let touches_dot = matches!(neighbour(&tokens, i, -1), Some(TokenType::DOT))
                         || matches!(neighbour(&tokens, i, 1), Some(TokenType::DOT));
                     if touches_dot {

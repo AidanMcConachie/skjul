@@ -4,6 +4,13 @@ pub enum TokenType{
     RETURN,
     IDENTIFIER(String),
     INTEGER(i64),
+    /// A numeric literal kept verbatim because it is not a plain decimal
+    /// integer: a hex (`0x1F`), binary (`0b101`) or octal (`0755`) constant, a
+    /// floating-point constant (`3.14`, `1e9`, `2.f`), or a decimal integer
+    /// with a type suffix (`100UL`). Re-emitted exactly as written — reparsing
+    /// to decimal would drop an octal/hex base or a suffix's type and silently
+    /// change the program's behaviour — and left untouched by literal disguise.
+    NUMBER(String),
     STRING(String),
     CHARACTER(String),
 
@@ -56,6 +63,11 @@ pub enum TokenType{
     PIPEPIPE,
     LEFTSHIFT,
     RIGHTSHIFT,
+    AMPEQUALS,
+    PIPEEQUALS,
+    CARETEQUALS,
+    LEFTSHIFTEQUALS,
+    RIGHTSHIFTEQUALS,
 
     LEFTPAREN,
     RIGHTPAREN,
@@ -74,6 +86,7 @@ impl TokenType {
             TokenType::RETURN => "return".to_string(),
             TokenType::IDENTIFIER(name) => name.clone(),
             TokenType::INTEGER(value) => value.to_string(),
+            TokenType::NUMBER(lexeme) => lexeme.clone(),
             TokenType::STRING(content) => format!("\"{content}\""),
             TokenType::CHARACTER(content) => format!("'{content}'"),
             TokenType::PREPROCESSOR(line) => line.clone(),
@@ -112,6 +125,11 @@ impl TokenType {
             TokenType::PIPEPIPE => "||".to_string(),
             TokenType::LEFTSHIFT => "<<".to_string(),
             TokenType::RIGHTSHIFT => ">>".to_string(),
+            TokenType::AMPEQUALS => "&=".to_string(),
+            TokenType::PIPEEQUALS => "|=".to_string(),
+            TokenType::CARETEQUALS => "^=".to_string(),
+            TokenType::LEFTSHIFTEQUALS => "<<=".to_string(),
+            TokenType::RIGHTSHIFTEQUALS => ">>=".to_string(),
             TokenType::LEFTPAREN => "(".to_string(),
             TokenType::RIGHTPAREN => ")".to_string(),
             TokenType::LEFTBRACE => "{".to_string(),

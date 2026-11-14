@@ -101,22 +101,106 @@ impl Lexer {
         TokenType::PREPROCESSOR(line)
     }
 
-    fn read_number(&mut self) -> Result<TokenType, String> {
-        let (line, column) = (self.line, self.column);
-        let mut digits = String::new();
+    /// Append characters to `out` while `pred` holds, stopping at the first
+    /// one that does not (or at end of input).
+    fn take_while(&mut self, out: &mut String, pred: impl Fn(char) -> bool) {
         while let Some(c) = self.peek() {
-            if c.is_ascii_digit() {
-                digits.push(c);
+            if pred(c) {
+                out.push(c);
                 self.advance();
             } else {
                 break;
             }
         }
+    }
 
-        digits
+    /// Consume a C integer suffix — any run of `u`/`l` in either case, such as
+    /// `U`, `ll`, `UL` — appending it to `out`. Returns whether one was found.
+    /// The run is taken permissively: an invalid combination is left for the C
+    /// compiler to reject, the same as it would in the original source.
+    fn take_int_suffix(&mut self, out: &mut String) -> bool {
+        let start = out.len();
+        while let Some(c @ ('u' | 'U' | 'l' | 'L')) = self.peek() {
+            out.push(c);
+            self.advance();
+        }
+        out.len() != start
+    }
+
+    /// Read a numeric literal. A plain decimal integer with no suffix is parsed
+    /// into [`TokenType::INTEGER`] so the literal-disguise pass can rewrite its
+    /// value. Every other form — hex, binary and octal integers, floats, and
+    /// any suffixed integer — is captured verbatim as [`TokenType::NUMBER`],
+    /// because its base or suffix carries meaning that reparsing to a bare
+    /// decimal would discard.
+    fn read_number(&mut self) -> Result<TokenType, String> {
+        let (line, column) = (self.line, self.column);
+        let mut lexeme = String::new();
+
+        // Prefixed integers: hex (`0x…`) and binary (`0b…`, a GCC extension).
+        if self.peek() == Some('0') {
+            match self.peek_next() {
+                Some('x' | 'X') => {
+                    lexeme.push(self.advance().unwrap()); // 0
+                    lexeme.push(self.advance().unwrap()); // x
+                    self.take_while(&mut lexeme, |c| c.is_ascii_hexdigit());
+                    self.take_int_suffix(&mut lexeme);
+                    return Ok(TokenType::NUMBER(lexeme));
+                }
+                Some('b' | 'B') => {
+                    lexeme.push(self.advance().unwrap()); // 0
+                    lexeme.push(self.advance().unwrap()); // b
+                    self.take_while(&mut lexeme, |c| c == '0' || c == '1');
+                    self.take_int_suffix(&mut lexeme);
+                    return Ok(TokenType::NUMBER(lexeme));
+                }
+                _ => {}
+            }
+        }
+
+        // Integer part (decimal digits).
+        self.take_while(&mut lexeme, |c| c.is_ascii_digit());
+
+        // A fractional part, an exponent, or a float suffix makes this a float.
+        let mut is_float = false;
+        if self.peek() == Some('.') {
+            is_float = true;
+            lexeme.push(self.advance().unwrap());
+            self.take_while(&mut lexeme, |c| c.is_ascii_digit());
+        }
+        if matches!(self.peek(), Some('e' | 'E')) {
+            is_float = true;
+            lexeme.push(self.advance().unwrap());
+            if matches!(self.peek(), Some('+' | '-')) {
+                lexeme.push(self.advance().unwrap());
+            }
+            self.take_while(&mut lexeme, |c| c.is_ascii_digit());
+        }
+        if matches!(self.peek(), Some('f' | 'F')) {
+            lexeme.push(self.advance().unwrap());
+            return Ok(TokenType::NUMBER(lexeme));
+        }
+        if is_float {
+            // Trailing `l`/`L` marks a `long double`.
+            if matches!(self.peek(), Some('l' | 'L')) {
+                lexeme.push(self.advance().unwrap());
+            }
+            return Ok(TokenType::NUMBER(lexeme));
+        }
+
+        // Plain decimal integer. A type suffix (`100UL`) or a leading-zero
+        // octal base (`0755`, which is *not* 755) must survive verbatim; only a
+        // bare decimal is parsed so its value can be disguised.
+        let had_suffix = self.take_int_suffix(&mut lexeme);
+        let is_octal = lexeme.len() > 1 && lexeme.starts_with('0');
+        if had_suffix || is_octal {
+            return Ok(TokenType::NUMBER(lexeme));
+        }
+
+        lexeme
             .parse::<i64>()
             .map(TokenType::INTEGER)
-            .map_err(|e| format!("{line}:{column}: invalid integer '{digits}': {e}"))
+            .map_err(|e| format!("{line}:{column}: invalid integer '{lexeme}': {e}"))
     }
 
     /// Read a `"..."` string literal. The opening quote is at the cursor.
@@ -200,15 +284,30 @@ impl Lexer {
             '!' if eat(self, '=') => TokenType::BANGEQUALS,
             '!' => TokenType::BANG,
             '<' if eat(self, '=') => TokenType::LESSEQUALS,
-            '<' if eat(self, '<') => TokenType::LEFTSHIFT,
+            '<' if eat(self, '<') => {
+                if eat(self, '=') {
+                    TokenType::LEFTSHIFTEQUALS
+                } else {
+                    TokenType::LEFTSHIFT
+                }
+            }
             '<' => TokenType::LESS,
             '>' if eat(self, '=') => TokenType::GREATEREQUALS,
-            '>' if eat(self, '>') => TokenType::RIGHTSHIFT,
+            '>' if eat(self, '>') => {
+                if eat(self, '=') {
+                    TokenType::RIGHTSHIFTEQUALS
+                } else {
+                    TokenType::RIGHTSHIFT
+                }
+            }
             '>' => TokenType::GREATER,
             '&' if eat(self, '&') => TokenType::AMPAMP,
+            '&' if eat(self, '=') => TokenType::AMPEQUALS,
             '&' => TokenType::AMP,
             '|' if eat(self, '|') => TokenType::PIPEPIPE,
+            '|' if eat(self, '=') => TokenType::PIPEEQUALS,
             '|' => TokenType::PIPE,
+            '^' if eat(self, '=') => TokenType::CARETEQUALS,
             '^' => TokenType::CARET,
             '~' => TokenType::TILDE,
             '?' => TokenType::QUESTION,

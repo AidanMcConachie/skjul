@@ -545,6 +545,11 @@ impl Parser {
             TokenType::STAREQUALS => AssignOp::Mul,
             TokenType::SLASHEQUALS => AssignOp::Div,
             TokenType::PERCENTEQUALS => AssignOp::Mod,
+            TokenType::LEFTSHIFTEQUALS => AssignOp::Shl,
+            TokenType::RIGHTSHIFTEQUALS => AssignOp::Shr,
+            TokenType::AMPEQUALS => AssignOp::BitAnd,
+            TokenType::PIPEEQUALS => AssignOp::BitOr,
+            TokenType::CARETEQUALS => AssignOp::BitXor,
             _ => return Ok(left),
         };
         self.advance();

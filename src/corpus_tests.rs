@@ -15,9 +15,10 @@
 //! If `gcc` is not on `PATH` the test skips rather than fails, so the suite
 //! still runs in environments without a C compiler.
 //!
-//! Note the lexer's limits when adding programs: integer literals are decimal
-//! only (no `0x…`), and the only compound assignments it tokenises are
-//! `+= -= *= /= %=` (no `<<=`, `&=`, …).
+//! The lexer handles decimal, hex (`0x…`), binary (`0b…`) and octal integers,
+//! integer suffixes (`100UL`), floating-point constants, and the full set of
+//! compound assignments including `<<= >>= &= |= ^=`. A leading-dot float
+//! (`.5`) still lexes as `. 5` but survives the round trip.
 
 use crate::obfuscate;
 use std::path::{Path, PathBuf};
@@ -207,6 +208,34 @@ int main() {
         total += dist2(pts[i]);
     }
     printf("total=%d\n", total);
+    return 0;
+}
+"#,
+    ),
+    (
+        // Exercises the lexer's numeric and compound-assignment coverage end
+        // to end: hex, octal and binary integer bases, an integer suffix, a
+        // float (including a leading-dot form), and the `<<= >>= &= |= ^=`
+        // compound assignments. Each base matters — `010` is 8, not 10 — so
+        // byte-identical output proves they survive verbatim.
+        "number_bases_and_compound_assign",
+        r#"
+#include <stdio.h>
+int main() {
+    unsigned long mask = 0xFF;
+    int oct = 010;
+    int bin = 0b1010;
+    unsigned long big = 100UL;
+    int x = 1;
+    x <<= 4;
+    x |= 0b0011;
+    x &= 0xFE;
+    x ^= 5;
+    int y = 64;
+    y >>= 2;
+    double d = 3.5 + 1e1 + .5;
+    printf("mask=%lu oct=%d bin=%d big=%lu x=%d y=%d d=%.1f\n",
+           mask, oct, bin, big, x, y, d);
     return 0;
 }
 "#,
