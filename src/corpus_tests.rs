@@ -318,17 +318,21 @@ fn obfuscated_programs_behave_identically() {
 
     for (name, source) in CORPUS {
         // The pipeline is seeded, so obfuscation must be reproducible.
-        let obfuscated = obfuscate(source)
-            .unwrap_or_else(|e| panic!("[{name}] obfuscation failed: {e}"));
+        let obfuscated =
+            obfuscate(source).unwrap_or_else(|e| panic!("[{name}] obfuscation failed: {e}"));
         let again = obfuscate(source).expect("re-obfuscate");
-        assert_eq!(obfuscated, again, "[{name}] obfuscation is not deterministic");
+        assert_eq!(
+            obfuscated, again,
+            "[{name}] obfuscation is not deterministic"
+        );
 
         let orig_bin = compile(&dir, &format!("{name}_orig"), source)
             .unwrap_or_else(|e| panic!("[{name}] original program did not compile:\n{e}"));
-        let obf_bin = compile(&dir, &format!("{name}_obf"), &obfuscated)
-            .unwrap_or_else(|e| {
-                panic!("[{name}] obfuscated program did not compile:\n{e}\n--- output ---\n{obfuscated}")
-            });
+        let obf_bin = compile(&dir, &format!("{name}_obf"), &obfuscated).unwrap_or_else(|e| {
+            panic!(
+                "[{name}] obfuscated program did not compile:\n{e}\n--- output ---\n{obfuscated}"
+            )
+        });
 
         let (orig_out, orig_code) = run(&orig_bin);
         let (obf_out, obf_code) = run(&obf_bin);

@@ -35,8 +35,8 @@
 //! is false, but needlessly fragile). The bodies *inside* each `case` are still
 //! visited, so dead code reaches those too.
 
-use super::predicates::{add, band, bxor, int, opaque_false};
 use super::Rng;
+use super::predicates::{add, band, bxor, int, opaque_false};
 use crate::parsing::ast::*;
 
 /// Name stem for the throwaway variables a junk block declares. Renaming
@@ -271,7 +271,10 @@ int main() {
         assert!(out.contains("_dc0"), "junk variable should appear:\n{out}");
         assert!(out.contains("if("), "junk must be guarded by an if:\n{out}");
         // The mask constant is a fingerprint of the junk arithmetic.
-        assert!(out.contains("255"), "masked arithmetic should appear:\n{out}");
+        assert!(
+            out.contains("255"),
+            "masked arithmetic should appear:\n{out}"
+        );
     }
 
     #[test]
@@ -287,6 +290,9 @@ int main() {
         // Whatever junk is spliced in, the original statements survive in order.
         let source = "int main() { int a = 1; a = a + 2; return a; }";
         let out = inserted(source, 3);
-        assert!(out.contains("return"), "the real return must remain:\n{out}");
+        assert!(
+            out.contains("return"),
+            "the real return must remain:\n{out}"
+        );
     }
 }

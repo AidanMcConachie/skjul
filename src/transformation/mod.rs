@@ -76,7 +76,7 @@ impl Rng {
 
     /// A coin flip.
     pub fn chance(&mut self) -> bool {
-        self.next_u64() % 2 == 0
+        self.next_u64().is_multiple_of(2)
     }
 
     /// A value in `lo..=hi` (requires `lo <= hi`).

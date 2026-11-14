@@ -27,9 +27,8 @@ pub fn parse(tokens: Vec<Token>) -> Result<TranslationUnit, String> {
 /// Type-specifier keywords. `int` is a keyword token and handled separately;
 /// the rest reach the parser as identifiers.
 const TYPE_KEYWORDS: &[&str] = &[
-    "char", "void", "float", "double", "long", "short", "unsigned", "signed",
-    "const", "volatile", "struct", "union", "enum", "static", "extern",
-    "register", "auto", "_Bool",
+    "char", "void", "float", "double", "long", "short", "unsigned", "signed", "const", "volatile",
+    "struct", "union", "enum", "static", "extern", "register", "auto", "_Bool",
 ];
 
 struct Parser {

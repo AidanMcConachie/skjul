@@ -1,9 +1,9 @@
 use axum::{
+    Router,
     extract::Form,
     http::header,
     response::Html,
     routing::{get, post},
-    Router,
 };
 
 use serde::Deserialize;
@@ -134,18 +134,19 @@ fn rename_identifiers(tokens: Vec<Token>) -> Vec<Token> {
     tokens
         .into_iter()
         .map(|mut token| {
-            if let TokenType::IDENTIFIER(name) = &token.kind {
-                if !is_reserved(name) && !from_directives.contains(name) {
-                    let new_name = match map.get(name) {
-                        Some(existing) => existing.clone(),
-                        None => {
-                            let generated = opaque_name(map.len());
-                            map.insert(name.clone(), generated.clone());
-                            generated
-                        }
-                    };
-                    token.kind = TokenType::IDENTIFIER(new_name);
-                }
+            if let TokenType::IDENTIFIER(name) = &token.kind
+                && !is_reserved(name)
+                && !from_directives.contains(name)
+            {
+                let new_name = match map.get(name) {
+                    Some(existing) => existing.clone(),
+                    None => {
+                        let generated = opaque_name(map.len());
+                        map.insert(name.clone(), generated.clone());
+                        generated
+                    }
+                };
+                token.kind = TokenType::IDENTIFIER(new_name);
             }
             token
         })

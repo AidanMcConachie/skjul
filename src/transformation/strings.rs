@@ -270,10 +270,10 @@ return _sk_o;}}\n"
             Expr::Call { callee, args } => {
                 // `sizeof("str")` parses as a call here; its operand's type
                 // (and thus the computed size) must not change.
-                if let Expr::Ident(name) = &*callee {
-                    if name == "sizeof" {
-                        return Expr::Call { callee, args };
-                    }
+                if let Expr::Ident(name) = &*callee
+                    && name == "sizeof"
+                {
+                    return Expr::Call { callee, args };
                 }
                 Expr::Call {
                     callee: Box::new(self.xe(*callee)),

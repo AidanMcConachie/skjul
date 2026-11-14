@@ -312,7 +312,7 @@ fn push_utf8(out: &mut Vec<u8>, c: char) {
 fn encode_mixed(bytes: &[u8], state: &mut u64) -> String {
     let mut out = String::new();
     for &b in bytes {
-        if next(state) % 2 == 0 {
+        if next(state).is_multiple_of(2) {
             out.push_str(&format!("\\{b:03o}"));
         } else {
             out.push_str(&format!("\\x{b:02x}"));

@@ -14,8 +14,8 @@
 //! Every predicate is a constant integer expression built from small literals,
 //! chosen so it cannot overflow and is provably non-zero.
 
-use super::predicates::opaque_true;
 use super::Rng;
+use super::predicates::opaque_true;
 use crate::parsing::ast::*;
 
 /// Wrap eligible statements throughout every function body with opaque-true
@@ -133,4 +133,3 @@ fn wrap_opaque(stmt: Stmt, rng: &mut Rng) -> Stmt {
         else_branch: None,
     }
 }
-

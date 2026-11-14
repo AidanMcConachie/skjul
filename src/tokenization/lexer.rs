@@ -217,7 +217,9 @@ impl Lexer {
                     content.push('\\');
                     match self.advance() {
                         Some(escaped) => content.push(escaped),
-                        None => return Err(format!("{line}:{column}: unterminated string literal")),
+                        None => {
+                            return Err(format!("{line}:{column}: unterminated string literal"));
+                        }
                     }
                 }
                 Some(c) => content.push(c),
@@ -239,7 +241,9 @@ impl Lexer {
                     content.push('\\');
                     match self.advance() {
                         Some(escaped) => content.push(escaped),
-                        None => return Err(format!("{line}:{column}: unterminated character literal")),
+                        None => {
+                            return Err(format!("{line}:{column}: unterminated character literal"));
+                        }
                     }
                 }
                 Some(c) => content.push(c),

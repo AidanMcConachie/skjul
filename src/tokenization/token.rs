@@ -1,5 +1,8 @@
+// Variants mirror C token names in ALL CAPS by deliberate convention; the
+// acronym lint does not apply.
+#[allow(clippy::upper_case_acronyms)]
 #[derive(Debug, Clone, PartialEq)]
-pub enum TokenType{
+pub enum TokenType {
     INT,
     RETURN,
     IDENTIFIER(String),
@@ -76,7 +79,7 @@ pub enum TokenType{
     LEFTBRACKET,
     RIGHTBRACKET,
 
-    EOF
+    EOF,
 }
 
 impl TokenType {
@@ -145,5 +148,5 @@ impl TokenType {
 pub struct Token {
     pub kind: TokenType,
     pub line: usize,
-    pub column: usize
+    pub column: usize,
 }

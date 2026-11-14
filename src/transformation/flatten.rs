@@ -122,7 +122,6 @@ fn try_flatten(body: Block, rng: &mut Rng) -> Block {
     // Each state's block ends by advancing the state variable to the next id
     // (or `end` for the last position) and breaking out of the dispatch
     // `switch`.
-    let mut states = states;
     let cases = emit_order
         .into_iter()
         .map(|pos| {
@@ -172,6 +171,74 @@ fn random_permutation(len: usize, rng: &mut Rng) -> Vec<usize> {
     let mut items: Vec<usize> = (0..len).collect();
     shuffle(&mut items, rng);
     items
+}
+
+/// Whether every declarator in a declaration can be hoisted: an aggregate
+/// `{ … }` initialiser, or an array that carries an initialiser, cannot be
+/// turned into a later assignment and so blocks the hoist.
+fn is_hoistable(decl: &Declaration) -> bool {
+    decl.declarators.iter().all(|d| match &d.init {
+        Some(Expr::InitList(_)) => false,
+        Some(_) => d.array_dims.is_empty(),
+        None => true,
+    })
+}
+
+/// Split a declaration into a hoisted declaration (initialisers removed) and
+/// the assignment statements that reproduce the scalar initialisers in place.
+fn hoist_declaration(decl: Declaration) -> (Declaration, Vec<Stmt>) {
+    let mut assigns = Vec::new();
+    let declarators = decl
+        .declarators
+        .into_iter()
+        .map(|d| {
+            if let Some(init) = d.init {
+                assigns.push(Stmt::Expr(Expr::Assign {
+                    op: AssignOp::Assign,
+                    target: Box::new(Expr::Ident(d.name.clone())),
+                    value: Box::new(init),
+                }));
+            }
+            Declarator {
+                name: d.name,
+                pointers: d.pointers,
+                array_dims: d.array_dims,
+                init: None,
+            }
+        })
+        .collect();
+    (
+        Declaration {
+            ty: decl.ty,
+            declarators,
+        },
+        assigns,
+    )
+}
+
+/// `_cf0 = value;`
+fn assign_state(value: i64) -> Stmt {
+    Stmt::Expr(Expr::Assign {
+        op: AssignOp::Assign,
+        target: Box::new(Expr::Ident(STATE_VAR.to_string())),
+        value: Box::new(Expr::Int(value)),
+    })
+}
+
+/// `int _cf0 = <entry>;`
+fn state_declaration(entry: i64) -> Stmt {
+    Stmt::Declaration(Declaration {
+        ty: Type {
+            specifiers: vec!["int".to_string()],
+            pointers: 0,
+        },
+        declarators: vec![Declarator {
+            name: STATE_VAR.to_string(),
+            pointers: 0,
+            array_dims: Vec::new(),
+            init: Some(Expr::Int(entry)),
+        }],
+    })
 }
 
 #[cfg(test)]
@@ -270,72 +337,4 @@ int main() {
         assert_eq!(body.stmts.len(), 1);
         assert!(matches!(body.stmts[0], Stmt::Return(_)));
     }
-}
-
-/// Whether every declarator in a declaration can be hoisted: an aggregate
-/// `{ … }` initialiser, or an array that carries an initialiser, cannot be
-/// turned into a later assignment and so blocks the hoist.
-fn is_hoistable(decl: &Declaration) -> bool {
-    decl.declarators.iter().all(|d| match &d.init {
-        Some(Expr::InitList(_)) => false,
-        Some(_) => d.array_dims.is_empty(),
-        None => true,
-    })
-}
-
-/// Split a declaration into a hoisted declaration (initialisers removed) and
-/// the assignment statements that reproduce the scalar initialisers in place.
-fn hoist_declaration(decl: Declaration) -> (Declaration, Vec<Stmt>) {
-    let mut assigns = Vec::new();
-    let declarators = decl
-        .declarators
-        .into_iter()
-        .map(|d| {
-            if let Some(init) = d.init {
-                assigns.push(Stmt::Expr(Expr::Assign {
-                    op: AssignOp::Assign,
-                    target: Box::new(Expr::Ident(d.name.clone())),
-                    value: Box::new(init),
-                }));
-            }
-            Declarator {
-                name: d.name,
-                pointers: d.pointers,
-                array_dims: d.array_dims,
-                init: None,
-            }
-        })
-        .collect();
-    (
-        Declaration {
-            ty: decl.ty,
-            declarators,
-        },
-        assigns,
-    )
-}
-
-/// `_cf0 = value;`
-fn assign_state(value: i64) -> Stmt {
-    Stmt::Expr(Expr::Assign {
-        op: AssignOp::Assign,
-        target: Box::new(Expr::Ident(STATE_VAR.to_string())),
-        value: Box::new(Expr::Int(value)),
-    })
-}
-
-/// `int _cf0 = <entry>;`
-fn state_declaration(entry: i64) -> Stmt {
-    Stmt::Declaration(Declaration {
-        ty: Type {
-            specifiers: vec!["int".to_string()],
-            pointers: 0,
-        },
-        declarators: vec![Declarator {
-            name: STATE_VAR.to_string(),
-            pointers: 0,
-            array_dims: Vec::new(),
-            init: Some(Expr::Int(entry)),
-        }],
-    })
 }
