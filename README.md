@@ -1,6 +1,6 @@
 # skjul
 
-A C source-code obfuscator with a small web frontend. Paste in C, get back an equivalent but deliberately hard-to-read program.
+A C source-code obfuscator with a small web frontend. Paste in C, get back an equivalent but deliberately hard-to-read program (it can be reverse engineered).
 
 Built with Rust and Axum. The basic implementation is done; several structural passes and other features are still in progress 
 
