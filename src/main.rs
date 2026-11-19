@@ -28,6 +28,26 @@ struct Input {
 
 #[tokio::main]
 async fn main() {
+    // With a path argument, obfuscate that file and print the result to the
+    // terminal instead of serving the web GUI. `cargo run main.cpp` reads
+    // `main.cpp`, writes its obfuscated form to stdout, and exits.
+    if let Some(path) = std::env::args().nth(1) {
+        match std::fs::read_to_string(&path) {
+            Ok(source) => match obfuscate(&source) {
+                Ok(code) => println!("{code}"),
+                Err(error) => {
+                    eprintln!("error: {error}");
+                    std::process::exit(1);
+                }
+            },
+            Err(error) => {
+                eprintln!("error: cannot read '{path}': {error}");
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
+
     let app = Router::new()
         .route("/", get(index))
         .route("/styles.css", get(styles))
