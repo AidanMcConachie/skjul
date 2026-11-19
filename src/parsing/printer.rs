@@ -60,6 +60,13 @@ fn print_params(params: &[Param], variadic: bool, out: &mut String) {
             out.push(' ');
             out.push_str(name);
         }
+        for dim in &param.array_dims {
+            out.push('[');
+            if let Some(e) = dim {
+                print_expr(e, out);
+            }
+            out.push(']');
+        }
     }
     if variadic {
         if params.is_empty() {

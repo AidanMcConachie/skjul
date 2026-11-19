@@ -50,6 +50,11 @@ pub struct Function {
 pub struct Param {
     pub ty: Type,
     pub name: Option<String>,
+    /// Array dimensions written in `[]` form, e.g. the `[]` in `int a[]` or the
+    /// `[4]` in `int a[4]`. Empty for a plain or pointer parameter. In C an
+    /// array parameter decays to a pointer, but we keep its written shape so the
+    /// printer reproduces the source faithfully.
+    pub array_dims: Vec<Option<Expr>>,
 }
 
 /// A type: its specifier words in source order plus a pointer level.

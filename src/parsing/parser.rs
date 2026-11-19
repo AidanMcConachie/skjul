@@ -240,7 +240,23 @@ impl Parser {
                 }
                 _ => None,
             };
-            params.push(Param { ty, name });
+            // Array-syntax parameters: `int marks[]`, `int grid[4]`, etc. The
+            // dimensions follow the name (or the type, for an unnamed param).
+            let mut array_dims = Vec::new();
+            while self.eat(&TokenType::LEFTBRACKET) {
+                if self.eat(&TokenType::RIGHTBRACKET) {
+                    array_dims.push(None);
+                } else {
+                    let dim = self.parse_assignment()?;
+                    self.expect(&TokenType::RIGHTBRACKET, "']'")?;
+                    array_dims.push(Some(dim));
+                }
+            }
+            params.push(Param {
+                ty,
+                name,
+                array_dims,
+            });
             if !self.eat(&TokenType::COMMA) {
                 break;
             }
