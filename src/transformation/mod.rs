@@ -7,8 +7,12 @@
 //! be unsafe to rewrite it is left untouched, so the output always compiles to
 //! an equivalent program.
 //!
-//! Five passes exist so far:
+//! Six passes exist so far:
 //!
+//! * [`defines`] inlines object-like integer `#define` constants at every use
+//!   and drops the directive (define inlining), so neither the macro name nor
+//!   its value survives — the value is folded into the code as a plain literal
+//!   for the later literal-disguise pass to hide.
 //! * [`includes`] drops recognised `#include` directives, splicing in `extern`
 //!   declarations for the standard symbols the program uses (include elision),
 //!   so the output no longer advertises its dependencies in a header block.
@@ -25,6 +29,7 @@
 //! [`predicates`].
 
 pub mod deadcode;
+pub mod defines;
 pub mod flatten;
 pub mod includes;
 pub mod opaque;
@@ -35,7 +40,8 @@ use crate::parsing::ast::TranslationUnit;
 
 /// Run every structural pass over a translation unit, in order.
 ///
-/// Include elision runs first, rewriting only top-level directives before any
+/// Define inlining and include elision run first, rewriting only top-level
+/// directives (and the literal uses of inlined macros) before any
 /// statement-level pass touches the tree. String encryption runs next, so the
 /// decoder calls it leaves behind are
 /// ordinary expressions by the time the later passes run — flattening can split
@@ -47,9 +53,13 @@ use crate::parsing::ast::TranslationUnit;
 /// junk blocks are not themselves wrapped in opaque guards, keeping each pass's
 /// contribution to the output distinct.
 pub fn transform(unit: TranslationUnit, rng: &mut Rng) -> TranslationUnit {
-    // Include elision runs first: it only rewrites top-level directives, so
-    // doing it up front keeps it clear of the statement-level passes and lets
-    // the spliced `extern` declarations flow through them like any other code.
+    // Define inlining and include elision run first: they only rewrite
+    // top-level directives (and, for inlining, the macro's literal uses), so
+    // doing them up front keeps them clear of the statement-level passes and
+    // lets the spliced `extern` declarations and inlined constants flow through
+    // those passes like any other code. Inlining runs before elision so a macro
+    // used only inside an elided header's prototypes is already resolved.
+    let unit = defines::inline_defines(unit);
     let unit = includes::elide_includes(unit);
     let unit = strings::encrypt_strings(unit, rng);
     let unit = flatten::flatten_unit(unit, rng);

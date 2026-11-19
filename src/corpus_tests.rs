@@ -254,6 +254,37 @@ int main() {
 }
 "#,
     ),
+    (
+        // Exercises define inlining end to end: object-like integer `#define`s
+        // in several bases used as an array size, a loop bound, a comparison and
+        // an initializer. Byte-identical output proves the inlined constants
+        // keep their exact values after the directives are dropped. The
+        // function-like `#define` must be left alone, or the output miscompiles.
+        "define_inlining",
+        r#"
+#include <stdio.h>
+#define COUNT 5
+#define THRESHOLD 0x14
+#define OFFSET 010
+#define SQ(x) ((x) * (x))
+int main() {
+    int vals[COUNT];
+    int above = 0;
+    for (int i = 0; i < COUNT; i++) {
+        vals[i] = SQ(i) + OFFSET;
+        if (vals[i] >= THRESHOLD) {
+            above++;
+        }
+    }
+    printf("vals:");
+    for (int i = 0; i < COUNT; i++) {
+        printf(" %d", vals[i]);
+    }
+    printf("\nabove %d: %d\n", THRESHOLD, above);
+    return above;
+}
+"#,
+    ),
 ];
 
 /// Whether a working `gcc` is on `PATH`.

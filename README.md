@@ -14,25 +14,41 @@ cargo run
 
 Then open <http://127.0.0.1:3000>, paste C into the form, and submit.
 
+### CLI mode
+
+If you pass a file path as an argument, skjul runs as a one-shot CLI instead of serving the web GUI: it obfuscates that file and prints the result to stdout.
+
+```sh
+cargo run main.c
+```
+
+Redirect stdout to save the output (`cargo run main.c > main.obf.c`). 
+
 ## How it obfuscates
 
 The pipeline runs source through structural passes (on the AST) and then
 token-level passes (on the re-lexed stream).
 
 1. **Tokenize** — lex the source into a token stream.
-2. **Parse** — build an AST. If the source falls outside the supported subset,
-   skip to step 8 and obfuscate the original tokens directly.
-3. **Include elision** — drop recognised `#include`s and splice in `extern`
+2. **Parse** — build an AST. The supported subset includes array-syntax
+   parameters (`int marks[]`, `int grid[4]`), whose written shape is preserved
+   so the printed output matches the source. If the source falls outside the
+   supported subset, skip to step 9 and obfuscate the original tokens directly.
+3. **Define inlining** — substitute object-like integer `#define` constants at
+   every use and drop the directive, so neither the macro name nor its value
+   survives; the inlined constant is later disguised like any other literal.
+4. **Include elision** — drop recognised `#include`s and splice in `extern`
    declarations for the standard symbols actually used.
-4. **String encryption** — encrypt string literals and inject a runtime
+5. **String encryption** — encrypt string literals and inject a runtime
    decoder, so no plaintext survives in the compiled binary.
-5. **Control-flow flattening** — rewrite straight-line function bodies into a
+6. **Control-flow flattening** — rewrite straight-line function bodies into a
    `while`/`switch` state machine.
-6. **Opaque predicates** — wrap statements in always-true `if` guards.
-7. **Dead-code insertion** — splice self-contained junk behind always-false
+7. **Opaque predicates** — wrap statements in always-true `if` guards.
+8. **Dead-code insertion** — splice self-contained junk behind always-false
    guards.
-8. **Print & re-lex** — print the AST back to C and re-tokenize it.
-9. **Rename identifiers** — replace names with opaque look-alike glyphs
-   (`_l`, `_I`, `_O`, `_0`, …), consistently per source name.
-10. **Literal disguise** — rewrite numeric literals into obscured forms.
-11. **Minify** — strip the stream down to minimal whitespace.
+9. **Print & re-lex** — print the AST back to C and re-tokenize it.
+10. **Rename identifiers** — replace names (including function parameters) with
+    opaque look-alike glyphs (`_l`, `_I`, `_O`, `_0`, …), consistently per source
+    name.
+11. **Literal disguise** — rewrite numeric literals into obscured forms.
+12. **Minify** — strip the stream down to minimal whitespace.

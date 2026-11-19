@@ -63,7 +63,10 @@ const KNOWN_HEADERS: &[KnownHeader] = &[
             ("printf", "extern int printf(const char *, ...);"),
             ("scanf", "extern int scanf(const char *, ...);"),
             ("sprintf", "extern int sprintf(char *, const char *, ...);"),
-            ("sscanf", "extern int sscanf(const char *, const char *, ...);"),
+            (
+                "sscanf",
+                "extern int sscanf(const char *, const char *, ...);",
+            ),
             ("puts", "extern int puts(const char *);"),
             ("putchar", "extern int putchar(int);"),
             ("getchar", "extern int getchar(void);"),
@@ -79,7 +82,10 @@ const KNOWN_HEADERS: &[KnownHeader] = &[
         name: "stdlib.h",
         protos: &[
             ("malloc", "extern void *malloc(unsigned long);"),
-            ("calloc", "extern void *calloc(unsigned long, unsigned long);"),
+            (
+                "calloc",
+                "extern void *calloc(unsigned long, unsigned long);",
+            ),
             ("realloc", "extern void *realloc(void *, unsigned long);"),
             ("free", "extern void free(void *);"),
             ("exit", "extern void exit(int);"),
