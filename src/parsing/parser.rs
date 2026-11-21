@@ -13,10 +13,15 @@
 
 use super::ast::*;
 use crate::tokenization::token::{Token, TokenType};
+use std::collections::HashSet;
 
 /// Parse a full token stream into a translation unit.
 pub fn parse(tokens: Vec<Token>) -> Result<TranslationUnit, String> {
-    let mut parser = Parser { tokens, pos: 0 };
+    let mut parser = Parser {
+        tokens,
+        pos: 0,
+        type_names: HashSet::new(),
+    };
     let mut items = Vec::new();
     while !parser.at_end() {
         items.push(parser.parse_item()?);
@@ -28,12 +33,16 @@ pub fn parse(tokens: Vec<Token>) -> Result<TranslationUnit, String> {
 /// the rest reach the parser as identifiers.
 const TYPE_KEYWORDS: &[&str] = &[
     "char", "void", "float", "double", "long", "short", "unsigned", "signed", "const", "volatile",
-    "struct", "union", "enum", "static", "extern", "register", "auto", "_Bool",
+    "struct", "union", "enum", "static", "extern", "register", "auto", "_Bool", "typedef",
 ];
 
 struct Parser {
     tokens: Vec<Token>,
     pos: usize,
+    /// Names introduced by `typedef`, so a later use as a type (`Foo x;`) is
+    /// recognised as a declaration rather than mis-parsed as an expression —
+    /// the classic "lexer hack", done here with the parser's own state.
+    type_names: HashSet<String>,
 }
 
 impl Parser {
@@ -121,7 +130,9 @@ impl Parser {
     fn is_type_start_at(&self, offset: usize) -> bool {
         match self.peek_at(offset) {
             TokenType::INT => true,
-            TokenType::IDENTIFIER(name) => TYPE_KEYWORDS.contains(&name.as_str()),
+            TokenType::IDENTIFIER(name) => {
+                TYPE_KEYWORDS.contains(&name.as_str()) || self.type_names.contains(name)
+            }
             _ => false,
         }
     }
@@ -139,6 +150,18 @@ impl Parser {
         // after the name marks a function.
         let ty = self.parse_type()?;
         let pointers = self.parse_pointers();
+
+        // A declaration with no declarator: a bare aggregate definition or
+        // forward declaration such as `struct Point { int x; };` or
+        // `struct Point;`, whose purpose is the type itself.
+        if pointers == 0 && self.peek() == &TokenType::SEMICOLON {
+            self.advance();
+            return Ok(Item::Declaration(Declaration {
+                ty,
+                declarators: Vec::new(),
+            }));
+        }
+
         let name = self.expect_ident()?;
 
         if self.eat(&TokenType::LEFTPAREN) {
@@ -172,24 +195,40 @@ impl Parser {
             return self.error("expected a type");
         }
         let mut specifiers = Vec::new();
+        let mut body = None;
         loop {
             match self.peek().clone() {
                 TokenType::INT => {
                     self.advance();
                     specifiers.push("int".to_string());
                 }
-                TokenType::IDENTIFIER(name) if TYPE_KEYWORDS.contains(&name.as_str()) => {
+                TokenType::IDENTIFIER(name)
+                    if TYPE_KEYWORDS.contains(&name.as_str())
+                        || self.type_names.contains(&name) =>
+                {
                     self.advance();
                     specifiers.push(name.clone());
-                    // A tagged type names its tag next, e.g. `struct Point`.
+                    // A `struct`/`union`/`enum` may name a tag, carry an inline
+                    // `{ … }` body, or both (`struct Point { … }`).
                     if matches!(name.as_str(), "struct" | "union" | "enum") {
                         if let TokenType::IDENTIFIER(tag) = self.peek().clone() {
                             self.advance();
                             specifiers.push(tag);
                         }
                         if self.peek() == &TokenType::LEFTBRACE {
-                            return self.error("inline struct/union/enum bodies are unsupported");
+                            body = Some(if name == "enum" {
+                                self.parse_enum_body()?
+                            } else {
+                                self.parse_struct_body()?
+                            });
+                            // The body completes the type; no more specifiers.
+                            break;
                         }
+                    }
+                    // A typedef name is a complete type on its own; stop so a
+                    // following declarator name is not eaten as a specifier.
+                    if self.type_names.contains(&name) {
+                        break;
                     }
                 }
                 _ => break,
@@ -198,7 +237,47 @@ impl Parser {
         Ok(Type {
             specifiers,
             pointers: 0,
+            body,
         })
+    }
+
+    /// Parse the `{ … }` body of a `struct`/`union`: a run of member
+    /// declarations, each parsed like any other declaration.
+    fn parse_struct_body(&mut self) -> Result<AggregateBody, String> {
+        self.expect(&TokenType::LEFTBRACE, "'{'")?;
+        let mut fields = Vec::new();
+        while self.peek() != &TokenType::RIGHTBRACE {
+            if self.at_end() {
+                return self.error("unterminated struct/union body");
+            }
+            fields.push(self.parse_declaration()?);
+        }
+        self.expect(&TokenType::RIGHTBRACE, "'}'")?;
+        Ok(AggregateBody::Fields(fields))
+    }
+
+    /// Parse the `{ … }` body of an `enum`: a comma-separated list of names,
+    /// each with an optional `= value`, and an optional trailing comma.
+    fn parse_enum_body(&mut self) -> Result<AggregateBody, String> {
+        self.expect(&TokenType::LEFTBRACE, "'{'")?;
+        let mut enumerators = Vec::new();
+        while self.peek() != &TokenType::RIGHTBRACE {
+            if self.at_end() {
+                return self.error("unterminated enum body");
+            }
+            let name = self.expect_ident()?;
+            let value = if self.eat(&TokenType::EQUALS) {
+                Some(self.parse_ternary()?)
+            } else {
+                None
+            };
+            enumerators.push(Enumerator { name, value });
+            if !self.eat(&TokenType::COMMA) {
+                break;
+            }
+        }
+        self.expect(&TokenType::RIGHTBRACE, "'}'")?;
+        Ok(AggregateBody::Enumerators(enumerators))
     }
 
     /// Count and consume a run of `*` pointer markers.
@@ -296,6 +375,13 @@ impl Parser {
             declarators.push(self.parse_declarator_tail(pointers, name)?);
         }
         self.expect(&TokenType::SEMICOLON, "';'")?;
+        // A `typedef` introduces each declarator's name as a new type name, so
+        // a later `Name x;` is recognised as a declaration.
+        if ty.specifiers.iter().any(|s| s == "typedef") {
+            for d in &declarators {
+                self.type_names.insert(d.name.clone());
+            }
+        }
         Ok(Declaration { ty, declarators })
     }
 
@@ -350,6 +436,15 @@ impl Parser {
     fn parse_declaration(&mut self) -> Result<Declaration, String> {
         let ty = self.parse_type()?;
         let pointers = self.parse_pointers();
+        // A declaration with no declarator, e.g. a nested `struct { … };`
+        // member or a local tag definition.
+        if pointers == 0 && self.peek() == &TokenType::SEMICOLON {
+            self.advance();
+            return Ok(Declaration {
+                ty,
+                declarators: Vec::new(),
+            });
+        }
         let name = self.expect_ident()?;
         self.finish_declaration(ty, pointers, name)
     }
@@ -614,6 +709,22 @@ impl Parser {
     }
 
     fn parse_unary(&mut self) -> Result<Expr, String> {
+        // `sizeof(type)` or `sizeof expr` / `sizeof(expr)`. The parenthesised
+        // form is a type operand only when a type keyword follows the `(`;
+        // otherwise it is an ordinary parenthesised expression.
+        if self.is_kw("sizeof") {
+            self.advance();
+            if self.peek() == &TokenType::LEFTPAREN && self.is_type_start_at(1) {
+                self.advance(); // (
+                let mut ty = self.parse_type()?;
+                ty.pointers = self.parse_pointers();
+                self.expect(&TokenType::RIGHTPAREN, "')'")?;
+                return Ok(Expr::SizeOfType(ty));
+            }
+            let operand = self.parse_unary()?;
+            return Ok(Expr::SizeOfValue(Box::new(operand)));
+        }
+
         // A cast: `(` type `)` unary. Distinguished from a parenthesised
         // expression by a type keyword following the `(`.
         if self.peek() == &TokenType::LEFTPAREN && self.is_type_start_at(1) {

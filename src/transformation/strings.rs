@@ -228,6 +228,11 @@ return _sk_o;}}\n"
 
             Expr::Int(_) | Expr::Char(_) | Expr::Ident(_) | Expr::Raw(_) | Expr::InitList(_) => e,
 
+            // `sizeof`'s operand is never evaluated and its type fixes the
+            // result, so encrypting a string inside it would change the size.
+            // Leave both forms untouched.
+            Expr::SizeOfType(_) | Expr::SizeOfValue(_) => e,
+
             Expr::Unary { op, expr } => {
                 // `&"str"` has array type and is well-formed; a decoder call is
                 // an rvalue whose address cannot be taken. Leave it alone.

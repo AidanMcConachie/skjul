@@ -215,10 +215,7 @@ fn ident(name: &str) -> Expr {
 /// `int <name> = <value>;`
 fn declare_int(name: &str, value: i64) -> Stmt {
     Stmt::Declaration(Declaration {
-        ty: Type {
-            specifiers: vec!["int".to_string()],
-            pointers: 0,
-        },
+        ty: Type::plain(vec!["int".to_string()]),
         declarators: vec![Declarator {
             name: name.to_string(),
             pointers: 0,

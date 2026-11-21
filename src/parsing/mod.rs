@@ -3,11 +3,13 @@
 //!
 //! This module is the foundation for structural obfuscation (control-flow
 //! rewriting, opaque predicates, dead-code insertion), which needs the shape
-//! of the program, not just a flat token stream. It is not yet wired into the
-//! transform pipeline: the token-level passes always succeed, whereas parsing
-//! fails on C outside the supported subset, so the intended integration is a
-//! *try-parse, fall back to the token passes* path once transforms exist.
-//! Until then these items are unused by `main`, hence the `dead_code` allow.
+//! of the program, not just a flat token stream. `main`'s `obfuscate` runs a
+//! *try-parse, fall back to the token passes* path: when the source parses into
+//! this subset it is transformed structurally and printed back to C, and when
+//! it does not, the token-level passes run over the original source instead.
+//!
+//! A few constructors and helpers here are kept for completeness even when no
+//! pass currently builds them, hence the `dead_code` allow.
 #![allow(dead_code)]
 
 pub mod ast;
@@ -85,5 +87,38 @@ int main() {
         if let Ok(path) = std::env::var("ROUNDTRIP_OUT") {
             std::fs::write(path, out).expect("writing round-trip output failed");
         }
+    }
+
+    #[test]
+    fn roundtrips_aggregate_types_and_sizeof() {
+        let source = r#"
+typedef struct Point { int x; int y; } Point;
+enum Dir { NORTH, EAST = 10, SOUTH };
+union Word { int i; char b[4]; };
+struct Empty;
+
+int measure(Point p) {
+    enum Dir d = EAST;
+    union Word w;
+    w.i = sizeof(Point) + sizeof(int);
+    return p.x + (int)d + w.i + sizeof w;
+}
+"#;
+        let out = roundtrip(source);
+
+        // The inline bodies are reproduced, tag and all.
+        assert!(out.contains("struct Point{"));
+        assert!(out.contains("enum Dir{"));
+        assert!(out.contains("union Word{"));
+        // The enumerator's explicit value survives.
+        assert!(out.contains("EAST=10"));
+        // A bare forward declaration keeps no stray declarator.
+        assert!(out.contains("struct Empty;"));
+        // The typedef name is recognised as a type in a later use (`Point p`),
+        // so the function parses rather than falling back.
+        assert!(out.contains("measure("));
+        // Both `sizeof` forms print.
+        assert!(out.contains("sizeof(Point)"));
+        assert!(out.contains("sizeof w"));
     }
 }

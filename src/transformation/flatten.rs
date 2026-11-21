@@ -228,10 +228,7 @@ fn assign_state(value: i64) -> Stmt {
 /// `int _cf0 = <entry>;`
 fn state_declaration(entry: i64) -> Stmt {
     Stmt::Declaration(Declaration {
-        ty: Type {
-            specifiers: vec!["int".to_string()],
-            pointers: 0,
-        },
+        ty: Type::plain(vec!["int".to_string()]),
         declarators: vec![Declarator {
             name: STATE_VAR.to_string(),
             pointers: 0,

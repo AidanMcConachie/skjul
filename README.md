@@ -2,7 +2,7 @@
 
 A C source-code obfuscator with a small web frontend. Paste in C, get back an equivalent but deliberately hard-to-read program (it can be reverse engineered).
 
-Built with Rust and Axum. The basic implementation is done; several structural passes and other features are still in progress 
+Built with Rust and Axum. The full pipeline is implemented — six structural passes over the AST plus three token-level passes — and every pass preserves behaviour (the corpus tests compile the original and obfuscated programs with `gcc` and assert identical output). Widening the parser's C subset further and adding more passes are ongoing.
 
 ## Running
 
@@ -30,10 +30,13 @@ The pipeline runs source through structural passes (on the AST) and then
 token-level passes (on the re-lexed stream).
 
 1. **Tokenize** — lex the source into a token stream.
-2. **Parse** — build an AST. The supported subset includes array-syntax
-   parameters (`int marks[]`, `int grid[4]`), whose written shape is preserved
-   so the printed output matches the source. If the source falls outside the
-   supported subset, skip to step 9 and obfuscate the original tokens directly.
+2. **Parse** — build an AST. The supported subset covers functions and
+   prototypes, the full statement and expression grammar, array-syntax
+   parameters (`int marks[]`, `int grid[4]`) whose written shape is preserved,
+   inline `struct`/`union`/`enum` definitions, `typedef`s (both the definition
+   and later uses of the new type name), and `sizeof`. If the source falls
+   outside the supported subset (e.g. bitfields or function-pointer
+   declarators), skip to step 9 and obfuscate the original tokens directly.
 3. **Define inlining** — substitute object-like integer `#define` constants at
    every use and drop the directive, so neither the macro name nor its value
    survives; the inlined constant is later disguised like any other literal.

@@ -9,8 +9,10 @@
 //! The corpus deliberately spans the pipeline's branches: programs well inside
 //! the parser subset (which get control-flow flattening and opaque predicates),
 //! programs that parse but defeat flattening per-function (array-with-
-//! initialiser bodies), and programs outside the subset entirely (an inline
-//! `struct` body) that fall back to the token-level passes.
+//! initialiser bodies), programs exercising the richer type grammar (inline
+//! `struct`/`union`/`enum` bodies, `typedef` definitions and uses, and
+//! `sizeof(type)`), and programs outside the subset entirely (a bitfield
+//! member) that fall back to the token-level passes.
 //!
 //! If `gcc` is not on `PATH` the test skips rather than fails, so the suite
 //! still runs in environments without a C compiler.
@@ -188,9 +190,10 @@ int main() {
 "#,
     ),
     (
-        // Inline `struct` body is outside the parser subset: this exercises the
-        // token-level fallback path end to end.
-        "struct_fallback",
+        // Inline `struct` bodies now parse, so this runs the full structural
+        // pipeline over a tagged-struct definition, member access and a
+        // by-value struct parameter.
+        "struct_definition",
         r#"
 #include <stdio.h>
 struct Point { int x; int y; };
@@ -208,6 +211,55 @@ int main() {
         total += dist2(pts[i]);
     }
     printf("total=%d\n", total);
+    return 0;
+}
+"#,
+    ),
+    (
+        // Exercises the richer type grammar end to end: a `typedef`ed struct
+        // used by its new name, an `enum` with both implicit and explicit
+        // values, a `union`, and `sizeof(type)` in several spellings. All names
+        // (tags, members, typedef, enumerators) are renamed consistently, so
+        // byte-identical output proves the definitions and uses stay in sync.
+        "typedef_enum_union_sizeof",
+        r#"
+#include <stdio.h>
+typedef struct Vec { int x; int y; } Vec;
+enum Dir { NORTH, EAST = 10, SOUTH, WEST = 40 };
+typedef union Word { int i; unsigned char bytes[4]; } Word;
+int dot(Vec a, Vec b) {
+    return a.x * b.x + a.y * b.y;
+}
+int main() {
+    Vec u = { 2, 3 };
+    Vec v = { 4, 5 };
+    enum Dir d = SOUTH;
+    Word w;
+    w.i = 0;
+    w.bytes[0] = 7;
+    printf("dot=%d dir=%d wi=%d\n", dot(u, v), (int)d, w.i);
+    printf("sizes %zu %zu %zu %zu\n",
+           sizeof(int), sizeof(Vec), sizeof(enum Dir), sizeof(Word));
+    printf("expr %zu\n", sizeof u + sizeof w.bytes);
+    return 0;
+}
+"#,
+    ),
+    (
+        // A bitfield member is outside the parser subset, so the whole program
+        // takes the token-level fallback path. Keeps that branch covered now
+        // that plain struct/union/enum bodies parse structurally.
+        "bitfield_fallback",
+        r#"
+#include <stdio.h>
+struct Flags { unsigned a : 1; unsigned b : 3; unsigned c : 4; };
+int main() {
+    struct Flags f;
+    f.a = 1;
+    f.b = 5;
+    f.c = 9;
+    int packed = f.a | (f.b << 1) | (f.c << 4);
+    printf("a=%u b=%u c=%u packed=%d\n", f.a, f.b, f.c, packed);
     return 0;
 }
 "#,

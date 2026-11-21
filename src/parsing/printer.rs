@@ -79,13 +79,46 @@ fn print_params(params: &[Param], variadic: bool, out: &mut String) {
 
 fn print_type(ty: &Type, out: &mut String) {
     out.push_str(&ty.specifiers.join(" "));
+    if let Some(body) = &ty.body {
+        print_aggregate_body(body, out);
+    }
     for _ in 0..ty.pointers {
         out.push('*');
     }
 }
 
+fn print_aggregate_body(body: &AggregateBody, out: &mut String) {
+    out.push('{');
+    match body {
+        AggregateBody::Fields(fields) => {
+            for field in fields {
+                print_declaration(field, out);
+                out.push(';');
+            }
+        }
+        AggregateBody::Enumerators(enumerators) => {
+            for (i, e) in enumerators.iter().enumerate() {
+                if i > 0 {
+                    out.push(',');
+                }
+                out.push_str(&e.name);
+                if let Some(value) = &e.value {
+                    out.push('=');
+                    print_expr(value, out);
+                }
+            }
+        }
+    }
+    out.push('}');
+}
+
 fn print_declaration(decl: &Declaration, out: &mut String) {
     print_type(&decl.ty, out);
+    // A bare aggregate definition (`struct P { … };`) has no declarator; skip
+    // the separating space so nothing dangles before the `;`.
+    if decl.declarators.is_empty() {
+        return;
+    }
     out.push(' ');
     for (i, d) in decl.declarators.iter().enumerate() {
         if i > 0 {
@@ -307,6 +340,17 @@ fn print_expr(expr: &Expr, out: &mut String) {
             out.push(')');
             print_expr(expr, out);
             out.push(')');
+        }
+        Expr::SizeOfType(ty) => {
+            out.push_str("sizeof(");
+            print_type(ty, out);
+            out.push(')');
+        }
+        Expr::SizeOfValue(e) => {
+            // The operand is already fully parenthesised by `print_expr`, so
+            // `sizeof` binds to it correctly without extra parentheses.
+            out.push_str("sizeof ");
+            print_expr(e, out);
         }
         Expr::Call { callee, args } => {
             // A bare-identifier callee is printed without wrapping parens.

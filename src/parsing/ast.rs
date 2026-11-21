@@ -7,11 +7,10 @@
 //! verbatim. This tree reflects that: it is deliberately a *practical subset*,
 //! enough to carry structural obfuscation passes, not a complete C grammar.
 //!
-//! Anything the parser cannot model (inline `struct`/`union` definitions,
-//! function-pointer declarators, `sizeof(type)`, K&R parameter lists, labels
-//! and `goto`, …) is reported as a parse error rather than mis-modelled, so a
-//! caller can fall back to the token-level passes when a program steps outside
-//! the subset.
+//! Anything the parser cannot model (function-pointer declarators, bitfields,
+//! designated initialisers, K&R parameter lists, …) is reported as a parse
+//! error rather than mis-modelled, so a caller can fall back to the token-level
+//! passes when a program steps outside the subset.
 
 /// A whole translation unit: the top-level items of one source file, in order.
 #[derive(Debug, Clone)]
@@ -66,6 +65,39 @@ pub struct Param {
 pub struct Type {
     pub specifiers: Vec<String>,
     pub pointers: usize,
+    /// The inline body of a `struct`/`union`/`enum` definition, e.g. the
+    /// `{ int x; int y; }` in `struct Point { int x; int y; }`. `None` for a
+    /// plain type or one that only names a tag (`struct Point`). The passes do
+    /// not reason about layout; they carry the body through so the printer can
+    /// reproduce the definition.
+    pub body: Option<AggregateBody>,
+}
+
+impl Type {
+    /// A plain type from specifier words, with no pointers and no inline body.
+    pub fn plain(specifiers: Vec<String>) -> Self {
+        Type {
+            specifiers,
+            pointers: 0,
+            body: None,
+        }
+    }
+}
+
+/// The inline body of an aggregate type definition.
+#[derive(Debug, Clone)]
+pub enum AggregateBody {
+    /// `struct`/`union` members, each a declaration (`int x;`, `char *s;`).
+    Fields(Vec<Declaration>),
+    /// `enum` constants, each a name with an optional explicit value.
+    Enumerators(Vec<Enumerator>),
+}
+
+/// One `enum` constant: a name and, optionally, the `= value` that sets it.
+#[derive(Debug, Clone)]
+pub struct Enumerator {
+    pub name: String,
+    pub value: Option<Expr>,
 }
 
 /// One or more declarators sharing a type, e.g. `int *a = f(), b[3];`.
@@ -180,6 +212,11 @@ pub enum Expr {
         ty: Type,
         expr: Box<Expr>,
     },
+    /// `sizeof(type)`, e.g. `sizeof(int)` or `sizeof(struct Point)`.
+    SizeOfType(Type),
+    /// `sizeof expr` or `sizeof(expr)`. The operand is never evaluated; only
+    /// its type matters, so obfuscation passes leave it untouched.
+    SizeOfValue(Box<Expr>),
     Call {
         callee: Box<Expr>,
         args: Vec<Expr>,

@@ -350,6 +350,11 @@ fn subst_expr(expr: &mut Expr, macros: &HashMap<String, i64>) {
                 subst_expr(elem, macros);
             }
         }
+        // A `sizeof(type)` operand holds no inlinable identifiers; a
+        // `sizeof expr` operand may, and substituting a macro constant for a
+        // name there matches what the preprocessor would have done.
+        Expr::SizeOfType(_) => {}
+        Expr::SizeOfValue(e) => subst_expr(e, macros),
     }
 }
 

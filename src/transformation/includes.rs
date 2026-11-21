@@ -249,6 +249,21 @@ fn walk_type(ty: &Type, names: &mut HashSet<String>) {
     for spec in &ty.specifiers {
         names.insert(spec.clone());
     }
+    match &ty.body {
+        Some(AggregateBody::Fields(fields)) => {
+            for field in fields {
+                walk_declaration(field, names);
+            }
+        }
+        Some(AggregateBody::Enumerators(enumerators)) => {
+            for e in enumerators {
+                if let Some(value) = &e.value {
+                    walk_expr(value, names);
+                }
+            }
+        }
+        None => {}
+    }
 }
 
 fn walk_declaration(decl: &Declaration, names: &mut HashSet<String>) {
@@ -372,5 +387,7 @@ fn walk_expr(expr: &Expr, names: &mut HashSet<String>) {
                 walk_expr(elem, names);
             }
         }
+        Expr::SizeOfType(ty) => walk_type(ty, names),
+        Expr::SizeOfValue(e) => walk_expr(e, names),
     }
 }
