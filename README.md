@@ -55,3 +55,5 @@ token-level passes (on the re-lexed stream).
     name.
 11. **Literal disguise** — rewrite numeric literals into obscured forms.
 12. **Minify** — strip the stream down to minimal whitespace.
+
+For further information on each of these passes, see the [`docs`](docs/) folder.
